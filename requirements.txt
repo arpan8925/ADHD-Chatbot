@@ -1,0 +1,10 @@
+google-generativeai 
+#fastapi 
+flask
+uvicorn 
+#sqlite3 
+faiss-cpu 
+sentence-transformers 
+requests
+websockets==9.1
+python-dotenv

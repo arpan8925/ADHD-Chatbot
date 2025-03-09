@@ -3,40 +3,72 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Flask Chat App</title>
+    <title>ADHD AI Assistant</title>
     <style>
-        body { font-family: Arial, sans-serif; text-align: center; }
-        #chat-box { width: 50%; margin: auto; height: 300px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; }
-        #user-input { width: 60%; padding: 10px; }
-        #send-btn { padding: 10px; cursor: pointer; }
+        body { font-family: Arial, sans-serif; text-align: center; padding: 20px; }
+        #chat-box { width: 50%; margin: auto; border: 1px solid #ddd; padding: 10px; height: 300px; overflow-y: auto; }
+        input { width: 60%; padding: 10px; }
+        button { padding: 10px; margin-left: 10px; }
     </style>
-</head>
+</head>```javascript
+function sendMessage() {
+    let message = document.getElementById("message").value.trim();
+    if (!message) return;
+
+    let chatBox = document.getElementById("chat-box");
+    chatBox.innerHTML += `<div><strong>You:</strong> ${message}</div>`;
+
+    fetch("/chat", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ user_id: "123", message: message })
+    })
+    .then(response => {
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+        return response.json();
+    })
+    .then(data => {
+        chatBox.innerHTML += `<div><strong>AI Assistant:</strong> ${data.response}</div>`;
+        document.getElementById("message").value = "";
+        chatBox.scrollTop = chatBox.scrollHeight;
+    })
+    .catch(error => {
+        console.error('Error:', error);
+        chatBox.innerHTML += `<div><strong>Error:</strong> ${error.message}</div>`;
+    });
+}
+```
 <body>
-    <h2>Flask Chat App (Gemini API)</h2>
+
+    <h2>ADHD AI Assistant</h2>
     <div id="chat-box"></div>
-    <input type="text" id="user-input" placeholder="Type your message..." />
-    <button id="send-btn">Send</button>
+    
+    <input type="text" id="message" placeholder="Type a message...">
+    <button onclick="sendMessage()">Send</button>
 
     <script>
-        document.getElementById("send-btn").addEventListener("click", function() {
-            let userMessage = document.getElementById("user-input").value;
-            if (!userMessage) return;
+        function sendMessage() {
+            let message = document.getElementById("message").value;
+            if (!message) return;
 
             let chatBox = document.getElementById("chat-box");
-            chatBox.innerHTML += `<p><strong>You:</strong> ${userMessage}</p>`;
-            document.getElementById("user-input").value = "";
+            chatBox.innerHTML += `<div><strong>You:</strong> ${message}</div>`;
 
             fetch("/chat", {
                 method: "POST",
                 headers: { "Content-Type": "application/json" },
-                body: JSON.stringify({ message: userMessage })
+                body: JSON.stringify({ user_id: "123", message: message })
             })
             .then(response => response.json())
             .then(data => {
-                chatBox.innerHTML += `<p><strong>Gemini:</strong> ${data.response}</p>`;
+                chatBox.innerHTML += `<div><strong>AI Assistant:</strong> ${data.response}</div>`;
+                document.getElementById("message").value = "";
                 chatBox.scrollTop = chatBox.scrollHeight;
             });
-        });
+        }
     </script>
+
 </body>
 </html>
