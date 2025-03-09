@@ -1,0 +1,42 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Flask Chat App</title>
+    <style>
+        body { font-family: Arial, sans-serif; text-align: center; }
+        #chat-box { width: 50%; margin: auto; height: 300px; overflow-y: scroll; border: 1px solid #ccc; padding: 10px; }
+        #user-input { width: 60%; padding: 10px; }
+        #send-btn { padding: 10px; cursor: pointer; }
+    </style>
+</head>
+<body>
+    <h2>Flask Chat App (Gemini API)</h2>
+    <div id="chat-box"></div>
+    <input type="text" id="user-input" placeholder="Type your message..." />
+    <button id="send-btn">Send</button>
+
+    <script>
+        document.getElementById("send-btn").addEventListener("click", function() {
+            let userMessage = document.getElementById("user-input").value;
+            if (!userMessage) return;
+
+            let chatBox = document.getElementById("chat-box");
+            chatBox.innerHTML += `<p><strong>You:</strong> ${userMessage}</p>`;
+            document.getElementById("user-input").value = "";
+
+            fetch("/chat", {
+                method: "POST",
+                headers: { "Content-Type": "application/json" },
+                body: JSON.stringify({ message: userMessage })
+            })
+            .then(response => response.json())
+            .then(data => {
+                chatBox.innerHTML += `<p><strong>Gemini:</strong> ${data.response}</p>`;
+                chatBox.scrollTop = chatBox.scrollHeight;
+            });
+        });
+    </script>
+</body>
+</html>
