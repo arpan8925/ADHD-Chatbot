@@ -8,23 +8,17 @@ import google.generativeai as genai
 import os
 
 # Load the Sentence Transformer model
-model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')
+embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')  # Renamed variable
 
 # Initialize Flask app
 app = Flask(__name__, template_folder="templates")
 
-# Load Gemini API key securely
+# Load environment variables
+load_dotenv(dotenv_path=".env")
 
-load_dotenv(dotenv_path=".env")  # Explicitly specify the file path
-
-# Fetch API key
-genai.configure(api_key="AIzaSyB2BpsoWmGqdIviKffD8tkdW7erip9RYz8")
-#GENAI_API_KEY = "AIzaSyB2BpsoWmGqdIviKffD8tkdW7erip9RYz8"
-
-#if not GENAI_API_KEY:
- #   raise ValueError("ERROR: Gemini API key is missing. Please set it in the .env file.")
-
-#print("API Key Loaded:", GENAI_API_KEY)  # Debugging line
+# Configure Gemini
+genai.configure(api_key=os.getenv("GEMINI_API_KEY"))
+gemini_model = genai.GenerativeModel('gemini-1.5-flash')  # Renamed variable
 
 # SQLite Database Setup
 def get_db_connection():
@@ -33,7 +27,7 @@ def get_db_connection():
 
 conn, cursor = get_db_connection()
 
-# Create tables
+# Create tables (unchanged)
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS user_routine (
         user_id TEXT PRIMARY KEY,
@@ -62,59 +56,54 @@ conn.commit()
 index = faiss.IndexFlatL2(384)
 stored_moods = []
 
-# 🟢 **Route: Main Web UI**
+# Routes
 @app.route("/")
 def home():
     return render_template("index.html")
 
-# 🔵 **Route: Handle Chat Requests**
 @app.route("/chat", methods=["POST"])
 def chat():
     data = request.json
     user_id = data.get("user_id", "123")
     user_message = data.get("message", "")
 
-    # Store user message embedding in FAISS
-    user_embedding = model.encode([user_message])
+    # Store embedding using correct model
+    user_embedding = embedding_model.encode([user_message])  # Use renamed model
     index.add(np.array(user_embedding))
     stored_moods.append(user_message)
 
-    # Fetch last serious issue (if any)
+    # Check for previous issues
     cursor.execute("SELECT last_issue FROM user_context WHERE user_id = ?", (user_id,))
     last_issue = cursor.fetchone()
 
     if last_issue:
         return jsonify({"response": f"Last time, you mentioned {last_issue[0]}. How are you feeling now? ❤️"})
 
-    # Check routine issues
+    # Detect routine issues
     routine_issues = detect_routine_issues(user_id, user_message)
 
-    # Store detected issues
-    if "emergency" in routine_issues or "something serious" in routine_issues:
-        cursor.execute("INSERT INTO user_context (user_id, last_issue) VALUES (?, ?) ON CONFLICT(user_id) DO UPDATE SET last_issue=?", 
-                       (user_id, user_message, user_message))
+    # Store serious issues
+    if "emergency" in routine_issues.lower() or "serious" in routine_issues.lower():
+        cursor.execute('''
+            INSERT INTO user_context (user_id, last_issue) 
+            VALUES (?, ?) 
+            ON CONFLICT(user_id) DO UPDATE SET last_issue=?
+        ''', (user_id, user_message, user_message))
         conn.commit()
 
-    # Generate AI response using Gemini API
-    prompt = f"User feels: {user_message}. Routine issues: {routine_issues}. How can I help in a supportive way?"
-    
-    #try:
-       # response = genai.chat(model="gemini-pro", messages=[{"role": "user", "content": prompt}])
-       # ai_response = response.text
-    #except Exception:
-      #  ai_response = "I'm having trouble generating a response right now. Try again later."
+    # Generate response
+    prompt = f"User feels: {user_message}. Routine issues: {routine_issues}. How can I help in a supportive ADHD-friendly way?"
+    ai_response = "I'm having trouble generating a response right now. Try again later."  # Default response
 
     try:
-        response = genai.chat(model="gemini-pro", messages=[{"role": "user", "content": prompt}])
+        response = gemini_model.generate_content(prompt)  # Use renamed model
         ai_response = response.text
     except Exception as e:
-        print(f"Gemini API error: {str(e)}")  # This will show the actual error in your logs
-    
-    ai_response = "I'm having trouble generating a response right now. Try again later."
+        print(f"Gemini API error: {str(e)}")
 
     return jsonify({"response": ai_response})
 
-# 🟠 **Detect Routine Issues**
+# Helper function (unchanged)
 def detect_routine_issues(user_id, user_message):
     cursor.execute("SELECT * FROM user_routine WHERE user_id = ?", (user_id,))
     record = cursor.fetchone()
@@ -129,6 +118,7 @@ def detect_routine_issues(user_id, user_message):
     if any(keyword in user_message.lower() for keyword in emergency_keywords):
         return "It sounds like something serious happened. Do you want to talk about it? ❤️"
 
+    # Routine checks (unchanged)
     if not sleep or ("AM" in sleep and int(sleep.split()[0]) > 1):
         issues.append("You might be feeling tired because of late sleep.")
     if meals == "skipped":
