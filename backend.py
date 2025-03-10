@@ -2,12 +2,11 @@ from flask import Flask, request, jsonify, render_template
 import sqlite3
 import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer, util
+from sentence_transformers import SentenceTransformer
 from dotenv import load_dotenv
 import google.generativeai as genai
 import os
 import random
-import torch
 
 # Load the Sentence Transformer model
 embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')  # Renamed variable
@@ -100,6 +99,17 @@ greeting_phrases = [
 
 greeting_embeddings = embedding_model.encode(greeting_phrases)
 
+# Convert to numpy array and normalize
+greeting_embeddings_np = greeting_embeddings.astype('float32')
+
+
+# Normalize and create FAISS index
+faiss.normalize_L2(greeting_embeddings_np)
+dimension = greeting_embeddings_np.shape[1]
+faiss_index = faiss.IndexFlatIP(dimension)
+faiss_index.add(greeting_embeddings_np)
+
+
 # FAISS Memory Storage
 index = faiss.IndexFlatL2(384)
 stored_moods = []
@@ -117,15 +127,23 @@ def chat():
     user_message_lower = user_message.lower()
     user_embedding = embedding_model.encode([user_message])[0]
 
-    # Detect greetings
-    is_greeting = False
-    similarities = util.cos_sim(user_embedding, greeting_embeddings)[0]
-    max_similarity = torch.max(similarities).item()
+    # Convert to numpy array directly
+    user_embedding_np = user_embedding.astype('float32')  # Remove any .cpu() calls
+    user_embedding_np = np.expand_dims(user_embedding_np, axis=0)
+    faiss.normalize_L2(user_embedding_np)
+
+    print(f"Greeting embeddings type: {type(greeting_embeddings)}")
+    print(f"User embedding type: {type(user_embedding)}")
+
+    # FAISS similarity search
+    D, I = faiss_index.search(user_embedding_np, 1)
+    max_similarity = D[0][0].item()
     stored_moods.append(user_message)
 
-    if max_similarity > 0.65:  # Tune this threshold as needed
+    if max_similarity > 0.65:  # Same threshold as before
         is_greeting = True
-
+    else:
+        is_greeting = False
 
     if is_greeting:
         try:
@@ -176,7 +194,7 @@ def chat():
 
     if last_issue:
         return jsonify({
-            "response": f"Last time we talked, you mentioned {last_issue[0]}. "
+            "response": f"Last time we talked & you mentioned {last_issue[0]}. "
                         f"How are you feeling about that now? 💭"
         })
 
