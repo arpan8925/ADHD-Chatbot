@@ -25,12 +25,53 @@ def get_db_connection():
     conn = sqlite3.connect("adhd_assistant.db", check_same_thread=False)
     return conn, conn.cursor()
 
+def detect_routine_issues(user_id, user_message):
+    cursor.execute("SELECT * FROM user_routine WHERE user_id = ?", (user_id,))
+    record = cursor.fetchone()
+
+    if not record:
+        return "I don’t have your routine data yet. Want to tell me how your day has been?"
+
+    sleep, meals, exercise, hygiene, hobbies, outdoors, relaxation = record[1:]
+    issues = []
+
+    emergency_keywords = ["emergency", "accident", "hospital", "stressful", "family issue"]
+    if any(keyword in user_message.lower() for keyword in emergency_keywords):
+        return "It sounds like something serious happened. Do you want to talk about it? ❤️"
+
+    # Routine checks (unchanged)
+    if not sleep or ("AM" in sleep and int(sleep.split()[0]) > 1):
+        issues.append("You might be feeling tired because of late sleep.")
+    if meals == "skipped":
+        issues.append("Skipping meals can drain your energy.")
+    if not exercise:
+        issues.append("No movement today! A short stretch could help.")
+    if not hygiene:
+        issues.append("Self-care is important! A quick shower can refresh your mind.")
+    if not hobbies:
+        issues.append("You haven't done anything fun today. Want to take a break?")
+    if not outdoors:
+        issues.append("Getting some sunlight can boost your mood!")
+    if not relaxation:
+        issues.append("You haven't taken a mental break today. Maybe some deep breathing?")
+
+    return "Hey, I noticed some things that might be affecting your mood:\n\n" + "\n".join(issues) if issues else "Your routine looks okay! 😊"
+
 conn, cursor = get_db_connection()
 
-# Create tables (unchanged)
+cursor.execute('''
+    CREATE TABLE IF NOT EXISTS user_details (
+        user_id TEXT PRIMARY KEY,
+        name TEXT,
+        age INTEGER,
+        last_issue TEXT,
+        issue_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+    )
+''')
+
 cursor.execute('''
     CREATE TABLE IF NOT EXISTS user_routine (
-        user_id TEXT PRIMARY KEY,
+        user_id TEXT,
         sleep TEXT,
         meals TEXT,
         exercise TEXT,
@@ -38,15 +79,8 @@ cursor.execute('''
         hobbies TEXT,
         outdoors TEXT,
         relaxation TEXT,
-        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP
-    )
-''')
-
-cursor.execute('''
-    CREATE TABLE IF NOT EXISTS user_context (
-        user_id TEXT PRIMARY KEY,
-        last_issue TEXT,
-        issue_timestamp TIMESTAMP DEFAULT CURRENT_TIMESTAMP
+        last_updated TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
+        FOREIGN KEY(user_id) REFERENCES user_details(user_id)
     )
 ''')
 
@@ -68,7 +102,7 @@ def chat():
     user_message = data.get("message", "")
 
     # Store embedding using correct model
-    user_embedding = embedding_model.encode([user_message])  # Use renamed model
+    user_embedding = embedding_model.encode([user_message])
     index.add(np.array(user_embedding))
     stored_moods.append(user_message)
 
@@ -102,39 +136,6 @@ def chat():
         print(f"Gemini API error: {str(e)}")
 
     return jsonify({"response": ai_response})
-
-# Helper function (unchanged)
-def detect_routine_issues(user_id, user_message):
-    cursor.execute("SELECT * FROM user_routine WHERE user_id = ?", (user_id,))
-    record = cursor.fetchone()
-
-    if not record:
-        return "I don’t have your routine data yet. Want to tell me how your day has been?"
-
-    sleep, meals, exercise, hygiene, hobbies, outdoors, relaxation = record[1:]
-    issues = []
-
-    emergency_keywords = ["emergency", "accident", "hospital", "stressful", "family issue"]
-    if any(keyword in user_message.lower() for keyword in emergency_keywords):
-        return "It sounds like something serious happened. Do you want to talk about it? ❤️"
-
-    # Routine checks (unchanged)
-    if not sleep or ("AM" in sleep and int(sleep.split()[0]) > 1):
-        issues.append("You might be feeling tired because of late sleep.")
-    if meals == "skipped":
-        issues.append("Skipping meals can drain your energy.")
-    if not exercise:
-        issues.append("No movement today! A short stretch could help.")
-    if not hygiene:
-        issues.append("Self-care is important! A quick shower can refresh your mind.")
-    if not hobbies:
-        issues.append("You haven't done anything fun today. Want to take a break?")
-    if not outdoors:
-        issues.append("Getting some sunlight can boost your mood!")
-    if not relaxation:
-        issues.append("You haven't taken a mental break today. Maybe some deep breathing?")
-
-    return "Hey, I noticed some things that might be affecting your mood:\n\n" + "\n".join(issues) if issues else "Your routine looks okay! 😊"
 
 if __name__ == "__main__":
     app.run(host="0.0.0.0", port=5001, debug=True)
