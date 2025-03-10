@@ -2,10 +2,12 @@ from flask import Flask, request, jsonify, render_template
 import sqlite3
 import faiss
 import numpy as np
-from sentence_transformers import SentenceTransformer
+from sentence_transformers import SentenceTransformer, util
 from dotenv import load_dotenv
 import google.generativeai as genai
 import os
+import random
+import torch
 
 # Load the Sentence Transformer model
 embedding_model = SentenceTransformer('sentence-transformers/all-MiniLM-L6-v2')  # Renamed variable
@@ -86,6 +88,18 @@ cursor.execute('''
 
 conn.commit()
 
+greeting_phrases = [
+    "hi", "hello", "hey", "howdy", "greetings", 
+    "good morning", "good afternoon", "good evening",
+    "hi there", "hey there", "hello friend", "salutations",
+    "how's it going", "what's up", "yo", "hola", "bonjour",
+    "namaste", "g'day", "ahoy", "aloha", "how do you do",
+    "nice to see you", "look who it is", "how are you",
+    "pleasure to meet you", "top of the morning", "hiya"
+]
+
+greeting_embeddings = embedding_model.encode(greeting_phrases)
+
 # FAISS Memory Storage
 index = faiss.IndexFlatL2(384)
 stored_moods = []
@@ -99,19 +113,72 @@ def home():
 def chat():
     data = request.json
     user_id = data.get("user_id", "123")
-    user_message = data.get("message", "")
+    user_message = data.get("message", "").strip()
+    user_message_lower = user_message.lower()
 
-    # Store embedding using correct model
-    user_embedding = embedding_model.encode([user_message])
-    index.add(np.array(user_embedding))
+    # Detect greetings
+    is_greeting = False
+    user_embedding = embedding_model.encode([user_message])[0]
+    similarities = util.cos_sim(user_embedding, greeting_embeddings)[0]
+    max_similarity = torch.max(similarities).item()
     stored_moods.append(user_message)
 
+    if max_similarity > 0.65:  # Tune this threshold as needed
+        is_greeting = True
+
+
+    if is_greeting:
+        try:
+            prompt = f"""Generate a warm, friendly response to this greeting: "{user_message}".
+            Use informal language, vary sentence structure, and include 1-2 relevant emojis. 
+            Examples of good responses: 
+            - "Hey there! 👋 What brings you here today?"
+            - "Hello! 🌟 How can I make your day better?"
+            - "Hi! 🎉 Ready for some productive fun?" 
+            Keep response under 2 sentences."""
+            
+            response = gemini_model.generate_content(prompt)
+            if response.text:
+                return jsonify({"response": response.text})
+            
+        except Exception as e:
+            print(f"Greeting generation failed: {str(e)}")
+            # Fallback to dynamic template-based response
+            fallbacks = [
+                "Hi there! 👋 How can I help you today?",
+                "Hello! 🌟 What's on your mind?",
+                "Hey! 🚀 Ready to tackle something awesome?"
+            ]
+            return jsonify({"response": random.choice(fallbacks)})
+    
+    # Handle depression-related keywords
+    depression_keywords = { 
+        "depressed", "sad", "hopeless", "worthless", "suicidal",
+        "empty", "alone", "miserable", "end it all"
+    }
+    if any(keyword in user_message_lower for keyword in depression_keywords):
+        # Store as serious issue
+        cursor.execute('''
+            INSERT INTO user_details (user_id, last_issue) 
+            VALUES (?, ?) 
+            ON CONFLICT(user_id) DO UPDATE SET last_issue=?
+        ''', (user_id, user_message, user_message))
+        conn.commit()
+        return jsonify({
+            "response": "I'm really sorry you're feeling this way. 💛 You're not alone. "
+                        "Would you like me to help you connect with professional support?"
+                        "\n\nYou can also text/call 988 for the Suicide & Crisis Lifeline."
+        })
+
     # Check for previous issues
-    cursor.execute("SELECT last_issue FROM user_context WHERE user_id = ?", (user_id,))
+    cursor.execute("SELECT last_issue FROM user_details WHERE user_id = ?", (user_id,))
     last_issue = cursor.fetchone()
 
     if last_issue:
-        return jsonify({"response": f"Last time, you mentioned {last_issue[0]}. How are you feeling now? ❤️"})
+        return jsonify({
+            "response": f"Last time we talked, you mentioned {last_issue[0]}. "
+                        f"How are you feeling about that now? 💭"
+        })
 
     # Detect routine issues
     routine_issues = detect_routine_issues(user_id, user_message)
@@ -126,14 +193,19 @@ def chat():
         conn.commit()
 
     # Generate response
-    prompt = f"User feels: {user_message}. Routine issues: {routine_issues}. How can I help in a supportive ADHD-friendly way?"
-    ai_response = "I'm having trouble generating a response right now. Try again later."  # Default response
+    prompt = f"""ADHD-friendly response to: "{user_message}". 
+    Detected issues: {routine_issues}. 
+    Respond with empathy, bullet points if needed, and offer practical help."""
+    
+    ai_response = "I'm here to help! Let's break this down together. 💪"  # Default response
 
     try:
-        response = gemini_model.generate_content(prompt)  # Use renamed model
-        ai_response = response.text
+        response = gemini_model.generate_content(prompt)
+        if response.text:
+            ai_response = response.text
     except Exception as e:
         print(f"Gemini API error: {str(e)}")
+        ai_response = "Hmm, my thoughts are a bit scattered right now. Could you try asking again? 🌪️"
 
     return jsonify({"response": ai_response})
 
