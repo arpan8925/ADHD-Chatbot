@@ -115,10 +115,10 @@ def chat():
     user_id = data.get("user_id", "123")
     user_message = data.get("message", "").strip()
     user_message_lower = user_message.lower()
+    user_embedding = embedding_model.encode([user_message])[0]
 
     # Detect greetings
     is_greeting = False
-    user_embedding = embedding_model.encode([user_message])[0]
     similarities = util.cos_sim(user_embedding, greeting_embeddings)[0]
     max_similarity = torch.max(similarities).item()
     stored_moods.append(user_message)
@@ -135,7 +135,7 @@ def chat():
             - "Hey there! 👋 What brings you here today?"
             - "Hello! 🌟 How can I make your day better?"
             - "Hi! 🎉 Ready for some productive fun?" 
-            Keep response under 2 sentences."""
+            Keep response under 2 sentences. Also ask How he is feeling today or How is he ?"""
             
             response = gemini_model.generate_content(prompt)
             if response.text:
